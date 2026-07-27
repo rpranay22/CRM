@@ -177,6 +177,9 @@ router.post(
               Send email before changing status.
               If email fails, lead remains a lead.
             */
+            console.log(
+                `Sending temporary password email to ${customer.email} with password: ${temporaryPassword}`
+            );
             await sendTemporaryPasswordEmail({
                 customer,
                 temporaryPassword,
