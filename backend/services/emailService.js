@@ -1,34 +1,48 @@
 const nodemailer = require("nodemailer");
-
+console.log("SMTP_HOST:", process.env.SMTP_HOST);
 const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT || 465),
-    secure: String(process.env.SMTP_SECURE).toLowerCase() === "true",
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT),
 
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASSWORD,
-    },
+  secure: false, // IMPORTANT for port 587
+
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASSWORD,
+  },
+
+  tls: {
+    rejectUnauthorized: true
+  }
 });
 
+
 async function verifyEmailConnection() {
-    await transporter.verify();
+  // await transporter.verify();
 }
 
+
 async function sendTemporaryPasswordEmail({
-    customer,
-    temporaryPassword,
+  customer,
+  temporaryPassword,
 }) {
-    const loginUrl =
-        process.env.CUSTOMER_LOGIN_URL ||
-        "http://localhost:3000/login";
 
-    await transporter.sendMail({
-        from: process.env.MAIL_FROM,
-        to: customer.email,
-        subject: "Your WattWatch account is ready",
+  const loginUrl =
+    process.env.CUSTOMER_LOGIN_URL ||
+    "http://localhost:3000/login";
 
-        text: `
+
+  await transporter.sendMail({
+
+    from: process.env.MAIL_FROM,
+
+    to: customer.email,
+
+    subject:
+      "Your WattWatch account is ready",
+
+
+    text: `
 Hello ${customer.firstName},
 
 Your WattWatch account has been activated.
@@ -40,86 +54,108 @@ Login here:
 ${loginUrl}
 
 Please change your temporary password after your first login.
-    `,
+        `,
 
-        html: `
-      <div style="
-        max-width:600px;
-        margin:auto;
-        font-family:Arial,sans-serif;
-        color:#153331;
-      ">
-        <div style="
-          background:#0f766e;
-          color:white;
-          padding:22px;
-          border-radius:14px 14px 0 0;
-        ">
-          <h2 style="margin:0">
+
+    html: `
+<div style="
+    max-width:600px;
+    margin:auto;
+    font-family:Arial,sans-serif;
+    color:#153331;
+">
+
+    <div style="
+        background:#0f766e;
+        color:white;
+        padding:22px;
+        border-radius:14px 14px 0 0;
+    ">
+
+        <h2 style="margin:0">
             Welcome to WattWatch
-          </h2>
-        </div>
+        </h2>
 
-        <div style="
-          padding:24px;
-          border:1px solid #d8eeee;
-          border-top:0;
-          border-radius:0 0 14px 14px;
-        ">
-          <p>Hello ${customer.firstName},</p>
+    </div>
 
-          <p>
+
+    <div style="
+        padding:24px;
+        border:1px solid #d8eeee;
+        border-top:0;
+        border-radius:0 0 14px 14px;
+    ">
+
+        <p>
+            Hello ${customer.firstName},
+        </p>
+
+
+        <p>
             Your account has been activated by our customer
             support team.
-          </p>
+        </p>
 
-          <p>
+
+        <p>
             <strong>Email:</strong>
             ${customer.email}
-          </p>
+        </p>
 
-          <p>
+
+        <p>
             <strong>Temporary password:</strong>
-          </p>
+        </p>
 
-          <div style="
+
+        <div style="
             background:#ecfdf5;
             padding:15px;
             border-radius:10px;
             font-size:20px;
             font-weight:bold;
             letter-spacing:2px;
-          ">
+        ">
             ${temporaryPassword}
-          </div>
+        </div>
 
-          <p style="margin-top:24px">
+
+        <p style="margin-top:24px">
+
             <a
-              href="${loginUrl}"
-              style="
-                background:#0f766e;
-                color:white;
-                padding:12px 20px;
-                border-radius:8px;
-                text-decoration:none;
-                display:inline-block;
-              "
+                href="${loginUrl}"
+                style="
+                    background:#0f766e;
+                    color:white;
+                    padding:12px 20px;
+                    border-radius:8px;
+                    text-decoration:none;
+                    display:inline-block;
+                "
             >
-              Log in to your account
+                Log in to your account
             </a>
-          </p>
 
-          <p style="font-size:13px;color:#64748b">
+        </p>
+
+
+        <p style="
+            font-size:13px;
+            color:#64748b;
+        ">
             Please change the temporary password after your
             first login.
-          </p>
-        </div>
-      </div>
-    `,
-    });
+        </p>
+
+    </div>
+
+</div>
+        `,
+  });
 }
 
+
 module.exports = {
-    verifyEmailConnection,
-    sendTemporaryPasswordEmail,
+  verifyEmailConnection,
+  sendTemporaryPasswordEmail,
 };
