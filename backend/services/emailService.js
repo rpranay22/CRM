@@ -211,12 +211,13 @@ async function postJson(url, { headers, body, okStatuses = [200, 201, 202] }) {
 }
 
 async function sendViaBrevo({ from, to, toName, subject, text, html }) {
-  await postJson("https://api.brevo.com/v3/smtp/email", {
+  return postJson("https://api.brevo.com/v3/smtp/email", {
     headers: {
       "api-key": process.env.BREVO_API_KEY,
     },
     body: {
       sender: from,
+      replyTo: from,
       to: [{ email: to, name: toName }],
       subject,
       textContent: text,
@@ -251,7 +252,7 @@ async function sendViaResend({ from, to, subject, text, html }) {
     ? `${from.name} <${from.email}>`
     : from.email;
 
-  await postJson("https://api.resend.com/emails", {
+  return postJson("https://api.resend.com/emails", {
     headers: {
       Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
     },
@@ -322,22 +323,29 @@ async function sendMail({ to, toName, subject, text, html }) {
   }
 
   if (process.env.BREVO_API_KEY) {
-    await sendViaBrevo({ from, to, toName, subject, text, html });
-    return "brevo";
+    const result = await sendViaBrevo({
+      from,
+      to,
+      toName,
+      subject,
+      text,
+      html,
+    });
+    return { provider: "brevo", messageId: result.messageId };
   }
 
   if (process.env.SENDGRID_API_KEY) {
     await sendViaSendGrid({ from, to, toName, subject, text, html });
-    return "sendgrid";
+    return { provider: "sendgrid" };
   }
 
   if (process.env.RESEND_API_KEY) {
-    await sendViaResend({ from, to, subject, text, html });
-    return "resend";
+    const result = await sendViaResend({ from, to, subject, text, html });
+    return { provider: "resend", messageId: result.id };
   }
 
   await sendViaSmtp({ from, to, subject, text, html });
-  return "smtp";
+  return { provider: "smtp" };
 }
 
 async function verifyEmailConnection() {
@@ -371,7 +379,7 @@ async function sendTemporaryPasswordEmail({ customer, temporaryPassword }) {
     temporaryPassword,
   });
 
-  const provider = await sendMail({
+  const result = await sendMail({
     to: customer.email,
     toName: `${customer.firstName} ${customer.lastName}`.trim(),
     subject,
@@ -380,8 +388,11 @@ async function sendTemporaryPasswordEmail({ customer, temporaryPassword }) {
   });
 
   console.log(
-    `Temporary password email sent to ${customer.email} via ${provider}`
+    `Temporary password email accepted by ${result.provider} for ${customer.email}` +
+      (result.messageId ? ` (id ${result.messageId})` : "")
   );
+
+  return result;
 }
 
 module.exports = {

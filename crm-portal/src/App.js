@@ -281,7 +281,7 @@ function Leads() {
       setError("");
       setMessage("");
 
-      await api(
+      const result = await api(
         `/customers/${lead.id}/convert`,
         {
           method: "POST",
@@ -290,7 +290,9 @@ function Leads() {
       );
 
       setMessage(
-        `Customer converted. Login details were emailed to ${lead.email}.`
+        result.temporaryPassword
+          ? `Customer converted. Email was accepted for ${lead.email}. If it is not in Inbox, check Spam/Promotions. Temporary password: ${result.temporaryPassword}`
+          : `Customer converted. Login details were emailed to ${lead.email}.`
       );
 
       await loadLeads();
@@ -425,24 +427,53 @@ function Customers() {
 
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [busyId, setBusyId] = useState(null);
+
+  async function loadCustomers() {
+    const result = await api(
+      `/customers?status=CUSTOMER&search=${encodeURIComponent(
+        search
+      )}`
+    );
+    setCustomers(result.data);
+  }
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      api(
-        `/customers?status=CUSTOMER&search=${encodeURIComponent(
-          search
-        )}`
-      )
-        .then((result) =>
-          setCustomers(result.data)
-        )
-        .catch((err) =>
-          setError(err.message)
-        );
+      loadCustomers().catch((err) =>
+        setError(err.message)
+      );
     }, 300);
 
     return () => clearTimeout(timer);
   }, [search]);
+
+  async function resendLogin(customer) {
+    try {
+      setBusyId(customer.id);
+      setError("");
+      setMessage("");
+
+      const result = await api(
+        `/customers/${customer.id}/resend-login`,
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        }
+      );
+
+      setMessage(
+        result.temporaryPassword
+          ? `Login email resent to ${customer.email}. If it is not in Inbox, check Spam/Promotions. Temporary password: ${result.temporaryPassword}`
+          : `Login email resent to ${customer.email}.`
+      );
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   return (
     <section className="page">
@@ -459,6 +490,12 @@ function Customers() {
           setSearch(event.target.value)
         }
       />
+
+      {message && (
+        <Message type="success">
+          {message}
+        </Message>
+      )}
 
       {error && (
         <Message type="error">
@@ -518,6 +555,16 @@ function Customers() {
                 ).toLocaleString()
                 : "Not available"}
             </small>
+
+            <button
+              className="convert-button"
+              disabled={busyId === customer.id}
+              onClick={() => resendLogin(customer)}
+            >
+              {busyId === customer.id
+                ? "Sending..."
+                : "Resend login email"}
+            </button>
           </article>
         ))}
       </div>

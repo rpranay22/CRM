@@ -10,6 +10,25 @@ const {
 
 const router = express.Router();
 
+function createTemporaryPassword() {
+    return crypto
+        .randomBytes(12)
+        .toString("base64url")
+        .slice(0, 12);
+}
+
+async function emailTemporaryPassword(customer) {
+    const temporaryPassword = createTemporaryPassword();
+    const passwordHash = await bcrypt.hash(temporaryPassword, 12);
+
+    await sendTemporaryPasswordEmail({
+        customer,
+        temporaryPassword,
+    });
+
+    return { temporaryPassword, passwordHash };
+}
+
 function removePassword(customer) {
     const data = customer.toJSON
         ? customer.toJSON()
@@ -163,16 +182,6 @@ router.post(
                 });
             }
 
-            const temporaryPassword = crypto
-                .randomBytes(12)
-                .toString("base64url")
-                .slice(0, 12);
-
-            const passwordHash = await bcrypt.hash(
-                temporaryPassword,
-                12
-            );
-
             /*
               Send email before changing status.
               If email fails, lead remains a lead.
@@ -180,10 +189,8 @@ router.post(
             console.log(
                 `Sending temporary password email to ${customer.email}`
             );
-            await sendTemporaryPasswordEmail({
-                customer,
-                temporaryPassword,
-            });
+            const { temporaryPassword, passwordHash } =
+                await emailTemporaryPassword(customer);
 
             await customer.update({
                 status: "CUSTOMER",
@@ -200,6 +207,7 @@ router.post(
             return res.json({
                 message:
                     "Lead converted and login email sent",
+                temporaryPassword,
                 data: removePassword(customer),
             });
         } catch (error) {
@@ -220,6 +228,52 @@ router.post(
                     ? "Email send timed out. Render free hosting blocks SMTP. Add BREVO_API_KEY, SENDGRID_API_KEY or RESEND_API_KEY in Render environment variables."
                     : error.message ||
                       "Unable to convert customer",
+            });
+        }
+    }
+);
+
+router.post(
+    "/customers/:id/resend-login",
+    async (req, res) => {
+        try {
+            const customer = await Customer.findByPk(
+                req.params.id
+            );
+
+            if (!customer) {
+                return res.status(404).json({
+                    error: "Customer not found",
+                });
+            }
+
+            if (customer.status !== "CUSTOMER") {
+                return res.status(409).json({
+                    error: "Convert this lead before sending login details",
+                });
+            }
+
+            const { temporaryPassword, passwordHash } =
+                await emailTemporaryPassword(customer);
+
+            await customer.update({
+                passwordHash,
+                mustChangePassword: true,
+                loginEmailSentAt: new Date(),
+            });
+
+            return res.json({
+                message: "Login email sent",
+                temporaryPassword,
+                data: removePassword(customer),
+            });
+        } catch (error) {
+            console.error("Resend login email error:", error);
+
+            return res.status(500).json({
+                error:
+                    error.message ||
+                    "Unable to resend login email",
             });
         }
     }

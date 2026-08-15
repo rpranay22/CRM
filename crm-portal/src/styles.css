@@ -407,6 +407,11 @@ td small {
     margin-top: 17px;
 }
 
+.customer-card .convert-button {
+    margin-top: 14px;
+    width: 100%;
+}
+
 .ticket-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
