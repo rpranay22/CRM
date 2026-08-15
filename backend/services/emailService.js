@@ -1,48 +1,61 @@
 const nodemailer = require("nodemailer");
-console.log("SMTP_HOST:", process.env.SMTP_HOST);
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT),
 
-  secure: false, // IMPORTANT for port 587
+const SMTP_BLOCKED_PORTS = new Set([25, 465, 587]);
+const SMTP_RELAY_PORT = 2525;
 
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASSWORD,
-  },
-
-  tls: {
-    rejectUnauthorized: true
-  }
-});
-
-
-async function verifyEmailConnection() {
-  // await transporter.verify();
+function isRender() {
+  return process.env.RENDER === "true";
 }
 
+function smtpPort() {
+  return Number(process.env.SMTP_PORT || 587);
+}
 
-async function sendTemporaryPasswordEmail({
-  customer,
-  temporaryPassword,
-}) {
+function smtpHost() {
+  return (process.env.SMTP_HOST || "").toLowerCase();
+}
 
+function isGmailOrOutlookHost(host) {
+  return (
+    host.includes("gmail.com") ||
+    host.includes("google.com") ||
+    host.includes("outlook.com") ||
+    host.includes("office365.com") ||
+    host.includes("hotmail.com")
+  );
+}
+
+function hasHttpEmailProvider() {
+  return Boolean(
+    process.env.BREVO_API_KEY ||
+      process.env.SENDGRID_API_KEY ||
+      process.env.RESEND_API_KEY
+  );
+}
+
+function parseFromAddress(from = process.env.MAIL_FROM || "") {
+  const match = String(from).match(/^(.*)<([^>]+)>$/);
+
+  if (match) {
+    return {
+      name: match[1].trim().replace(/^"|"$/g, "") || "WattWatch",
+      email: match[2].trim(),
+    };
+  }
+
+  return {
+    name: "WattWatch",
+    email: from.trim(),
+  };
+}
+
+function buildTemporaryPasswordMessage({ customer, temporaryPassword }) {
   const loginUrl =
-    process.env.CUSTOMER_LOGIN_URL ||
-    "http://localhost:3000/login";
+    process.env.CUSTOMER_LOGIN_URL || "http://localhost:3000/login";
 
+  const subject = "Your WattWatch account is ready";
 
-  await transporter.sendMail({
-
-    from: process.env.MAIL_FROM,
-
-    to: customer.email,
-
-    subject:
-      "Your WattWatch account is ready",
-
-
-    text: `
+  const text = `
 Hello ${customer.firstName},
 
 Your WattWatch account has been activated.
@@ -54,10 +67,9 @@ Login here:
 ${loginUrl}
 
 Please change your temporary password after your first login.
-        `,
+  `.trim();
 
-
-    html: `
+  const html = `
 <div style="
     max-width:600px;
     margin:auto;
@@ -150,10 +162,227 @@ Please change your temporary password after your first login.
     </div>
 
 </div>
-        `,
+  `.trim();
+
+  return { subject, text, html };
+}
+
+function renderSmtpBlockedError() {
+  return new Error(
+    "Render free hosting blocks SMTP ports 25, 465 and 587, so Gmail/Nodemailer cannot send mail there. Add BREVO_API_KEY, SENDGRID_API_KEY or RESEND_API_KEY in the Render environment variables. Those providers send mail over HTTPS, which Render allows."
+  );
+}
+
+async function postJson(url, { headers, body, okStatuses = [200, 201, 202] }) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...headers,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const raw = await response.text();
+  let data = {};
+
+  if (raw) {
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      data = { message: raw };
+    }
+  }
+
+  if (!okStatuses.includes(response.status)) {
+    const message =
+      data.message ||
+      data.error?.message ||
+      data.errors?.[0]?.message ||
+      data.title ||
+      raw ||
+      `Email API failed with status ${response.status}`;
+
+    throw new Error(message);
+  }
+
+  return data;
+}
+
+async function sendViaBrevo({ from, to, toName, subject, text, html }) {
+  await postJson("https://api.brevo.com/v3/smtp/email", {
+    headers: {
+      "api-key": process.env.BREVO_API_KEY,
+    },
+    body: {
+      sender: from,
+      to: [{ email: to, name: toName }],
+      subject,
+      textContent: text,
+      htmlContent: html,
+    },
   });
 }
 
+async function sendViaSendGrid({ from, to, toName, subject, text, html }) {
+  await postJson("https://api.sendgrid.com/v3/mail/send", {
+    headers: {
+      Authorization: `Bearer ${process.env.SENDGRID_API_KEY}`,
+    },
+    body: {
+      personalizations: [
+        {
+          to: [{ email: to, name: toName }],
+        },
+      ],
+      from,
+      subject,
+      content: [
+        { type: "text/plain", value: text },
+        { type: "text/html", value: html },
+      ],
+    },
+  });
+}
+
+async function sendViaResend({ from, to, subject, text, html }) {
+  const fromValue = from.name
+    ? `${from.name} <${from.email}>`
+    : from.email;
+
+  await postJson("https://api.resend.com/emails", {
+    headers: {
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+    },
+    body: {
+      from: fromValue,
+      to: [to],
+      subject,
+      text,
+      html,
+    },
+  });
+}
+
+function createSmtpTransporter(port) {
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port,
+    secure: port === 465,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASSWORD,
+    },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
+    tls: {
+      rejectUnauthorized: true,
+    },
+  });
+}
+
+async function sendViaSmtp({ from, to, subject, text, html }) {
+  const configuredPort = smtpPort();
+  const host = smtpHost();
+  let port = configuredPort;
+
+  if (
+    isRender() &&
+    SMTP_BLOCKED_PORTS.has(port) &&
+    !isGmailOrOutlookHost(host)
+  ) {
+    port = SMTP_RELAY_PORT;
+    console.log(
+      `Render blocks SMTP ${configuredPort}; trying relay port ${port}`
+    );
+  }
+
+  if (isRender() && SMTP_BLOCKED_PORTS.has(port)) {
+    throw renderSmtpBlockedError();
+  }
+
+  const transporter = createSmtpTransporter(port);
+
+  await transporter.sendMail({
+    from: process.env.MAIL_FROM,
+    to,
+    subject,
+    text,
+    html,
+  });
+}
+
+async function sendMail({ to, toName, subject, text, html }) {
+  const from = parseFromAddress();
+
+  if (!from.email) {
+    throw new Error("MAIL_FROM is not configured");
+  }
+
+  if (process.env.BREVO_API_KEY) {
+    await sendViaBrevo({ from, to, toName, subject, text, html });
+    return "brevo";
+  }
+
+  if (process.env.SENDGRID_API_KEY) {
+    await sendViaSendGrid({ from, to, toName, subject, text, html });
+    return "sendgrid";
+  }
+
+  if (process.env.RESEND_API_KEY) {
+    await sendViaResend({ from, to, subject, text, html });
+    return "resend";
+  }
+
+  await sendViaSmtp({ from, to, subject, text, html });
+  return "smtp";
+}
+
+async function verifyEmailConnection() {
+  if (process.env.BREVO_API_KEY) {
+    console.log("Email provider: Brevo HTTPS API");
+    return;
+  }
+
+  if (process.env.SENDGRID_API_KEY) {
+    console.log("Email provider: SendGrid HTTPS API");
+    return;
+  }
+
+  if (process.env.RESEND_API_KEY) {
+    console.log("Email provider: Resend HTTPS API");
+    return;
+  }
+
+  if (isRender() && SMTP_BLOCKED_PORTS.has(smtpPort())) {
+    console.warn(renderSmtpBlockedError().message);
+    return;
+  }
+
+  const transporter = createSmtpTransporter(smtpPort());
+  await transporter.verify();
+}
+
+async function sendTemporaryPasswordEmail({ customer, temporaryPassword }) {
+  const { subject, text, html } = buildTemporaryPasswordMessage({
+    customer,
+    temporaryPassword,
+  });
+
+  const provider = await sendMail({
+    to: customer.email,
+    toName: `${customer.firstName} ${customer.lastName}`.trim(),
+    subject,
+    text,
+    html,
+  });
+
+  console.log(
+    `Temporary password email sent to ${customer.email} via ${provider}`
+  );
+}
 
 module.exports = {
   verifyEmailConnection,

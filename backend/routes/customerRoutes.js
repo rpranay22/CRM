@@ -1,6 +1,6 @@
 const express = require("express");
 const crypto = require("crypto");
-const bcrypt = require("bcryptjs");
+const bcrypt = require("bcrypt");
 const { Op } = require("sequelize");
 
 const Customer = require("../models/Customer");
@@ -178,7 +178,7 @@ router.post(
               If email fails, lead remains a lead.
             */
             console.log(
-                `Sending temporary password email to ${customer.email} with password: ${temporaryPassword}`
+                `Sending temporary password email to ${customer.email}`
             );
             await sendTemporaryPasswordEmail({
                 customer,
@@ -208,10 +208,18 @@ router.post(
                 error
             );
 
+            const timedOut = [
+                "ETIMEDOUT",
+                "ESOCKET",
+                "ECONNECTION",
+                "ECONNREFUSED",
+            ].includes(error.code);
+
             return res.status(500).json({
-                error:
-                    error.message ||
-                    "Unable to convert customer",
+                error: timedOut
+                    ? "Email send timed out. Render free hosting blocks SMTP. Add BREVO_API_KEY, SENDGRID_API_KEY or RESEND_API_KEY in Render environment variables."
+                    : error.message ||
+                      "Unable to convert customer",
             });
         }
     }
