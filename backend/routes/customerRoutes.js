@@ -1,9 +1,9 @@
 const express = require("express");
 const crypto = require("crypto");
-const bcrypt = require("bcrypt");
 const { Op } = require("sequelize");
 
 const Customer = require("../models/Customer");
+const { hashPassword } = require("../utils/password");
 const {
     sendTemporaryPasswordEmail,
 } = require("../services/emailService");
@@ -19,7 +19,7 @@ function createTemporaryPassword() {
 
 async function emailTemporaryPassword(customer) {
     const temporaryPassword = createTemporaryPassword();
-    const passwordHash = await bcrypt.hash(temporaryPassword, 12);
+    const passwordHash = await hashPassword(temporaryPassword);
 
     const emailResult = await sendTemporaryPasswordEmail({
         customer,

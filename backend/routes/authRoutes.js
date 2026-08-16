@@ -1,8 +1,8 @@
 const express = require("express");
-const bcrypt = require("bcrypt");
 
 const Customer = require("../models/Customer");
 const sequelize = require("../config/database");
+const { verifyPassword } = require("../utils/password");
 
 const router = express.Router();
 
@@ -40,7 +40,7 @@ router.post(
                 });
             }
 
-            const validPassword = await bcrypt.compare(
+            const validPassword = await verifyPassword(
                 password,
                 customer.passwordHash
             );
