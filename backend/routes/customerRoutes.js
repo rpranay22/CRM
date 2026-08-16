@@ -21,12 +21,16 @@ async function emailTemporaryPassword(customer) {
     const temporaryPassword = createTemporaryPassword();
     const passwordHash = await bcrypt.hash(temporaryPassword, 12);
 
-    await sendTemporaryPasswordEmail({
+    const emailResult = await sendTemporaryPasswordEmail({
         customer,
         temporaryPassword,
     });
 
-    return { temporaryPassword, passwordHash };
+    return {
+        temporaryPassword,
+        passwordHash,
+        emailProvider: emailResult.provider,
+    };
 }
 
 function removePassword(customer) {
@@ -189,7 +193,7 @@ router.post(
             console.log(
                 `Sending temporary password email to ${customer.email}`
             );
-            const { temporaryPassword, passwordHash } =
+            const { temporaryPassword, passwordHash, emailProvider } =
                 await emailTemporaryPassword(customer);
 
             await customer.update({
@@ -208,6 +212,7 @@ router.post(
                 message:
                     "Lead converted and login email sent",
                 temporaryPassword,
+                emailProvider,
                 data: removePassword(customer),
             });
         } catch (error) {
@@ -253,7 +258,7 @@ router.post(
                 });
             }
 
-            const { temporaryPassword, passwordHash } =
+            const { temporaryPassword, passwordHash, emailProvider } =
                 await emailTemporaryPassword(customer);
 
             await customer.update({
@@ -265,6 +270,7 @@ router.post(
             return res.json({
                 message: "Login email sent",
                 temporaryPassword,
+                emailProvider,
                 data: removePassword(customer),
             });
         } catch (error) {

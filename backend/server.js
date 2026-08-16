@@ -7,6 +7,7 @@ const sequelize = require("./config/database");
 
 require("./models/Customer");
 require("./models/Ticket");
+require("./models/Setting");
 
 const customerRoutes = require(
     "./routes/customerRoutes"
@@ -19,6 +20,9 @@ const ticketRoutes = require(
 );
 const authRoutes = require(
     "./routes/authRoutes"
+);
+const gmailRoutes = require(
+    "./routes/gmailRoutes"
 );
 
 const {
@@ -49,6 +53,7 @@ app.use("/api", customerRoutes);
 app.use("/api", dashboardRoutes);
 app.use("/api", ticketRoutes);
 app.use("/api", authRoutes);
+app.use("/api", gmailRoutes);
 
 const PORT = Number(
     process.env.PORT || 5000

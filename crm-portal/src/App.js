@@ -242,6 +242,7 @@ function Leads() {
   const [busyId, setBusyId] = useState(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [issuedPassword, setIssuedPassword] = useState(null);
 
   async function loadLeads() {
     try {
@@ -280,6 +281,7 @@ function Leads() {
       setBusyId(lead.id);
       setError("");
       setMessage("");
+      setIssuedPassword(null);
 
       const result = await api(
         `/customers/${lead.id}/convert`,
@@ -289,10 +291,18 @@ function Leads() {
         }
       );
 
+      if (result.temporaryPassword) {
+        setIssuedPassword({
+          email: lead.email,
+          password: result.temporaryPassword,
+          provider: result.emailProvider,
+        });
+      }
+
       setMessage(
-        result.temporaryPassword
-          ? `Customer converted. Email was accepted for ${lead.email}. If it is not in Inbox, check Spam/Promotions. Temporary password: ${result.temporaryPassword}`
-          : `Customer converted. Login details were emailed to ${lead.email}.`
+        result.emailProvider === "gmail"
+          ? `Customer converted. Login email was sent through Gmail to ${lead.email}.`
+          : `Customer converted. Copy the temporary password below. Gmail often hides Brevo mail from @gmail.com senders.`
       );
 
       await loadLeads();
@@ -318,6 +328,15 @@ function Leads() {
         }
         placeholder="Search name, email, Eircode or MPRN"
       />
+
+      <GmailSetupBanner />
+
+      {issuedPassword && (
+        <IssuedCredentials
+          email={issuedPassword.email}
+          password={issuedPassword.password}
+        />
+      )}
 
       {message && (
         <Message type="success">
@@ -429,6 +448,7 @@ function Customers() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busyId, setBusyId] = useState(null);
+  const [issuedPassword, setIssuedPassword] = useState(null);
 
   async function loadCustomers() {
     const result = await api(
@@ -454,6 +474,7 @@ function Customers() {
       setBusyId(customer.id);
       setError("");
       setMessage("");
+      setIssuedPassword(null);
 
       const result = await api(
         `/customers/${customer.id}/resend-login`,
@@ -463,10 +484,18 @@ function Customers() {
         }
       );
 
+      if (result.temporaryPassword) {
+        setIssuedPassword({
+          email: customer.email,
+          password: result.temporaryPassword,
+          provider: result.emailProvider,
+        });
+      }
+
       setMessage(
-        result.temporaryPassword
-          ? `Login email resent to ${customer.email}. If it is not in Inbox, check Spam/Promotions. Temporary password: ${result.temporaryPassword}`
-          : `Login email resent to ${customer.email}.`
+        result.emailProvider === "gmail"
+          ? `Login email was sent through Gmail to ${customer.email}.`
+          : `Login email was accepted for ${customer.email}. Copy the temporary password below if it does not arrive.`
       );
     } catch (err) {
       setError(err.message);
@@ -490,6 +519,15 @@ function Customers() {
           setSearch(event.target.value)
         }
       />
+
+      <GmailSetupBanner />
+
+      {issuedPassword && (
+        <IssuedCredentials
+          email={issuedPassword.email}
+          password={issuedPassword.password}
+        />
+      )}
 
       {message && (
         <Message type="success">
@@ -694,6 +732,59 @@ function PageHeading({
     <div className="page-heading">
       <h2>{title}</h2>
       <p>{description}</p>
+    </div>
+  );
+}
+
+function GmailSetupBanner() {
+  const [status, setStatus] = useState(null);
+
+  useEffect(() => {
+    api("/gmail/status")
+      .then(setStatus)
+      .catch(() => {});
+  }, []);
+
+  if (!status || status.connected) {
+    return null;
+  }
+
+  return (
+    <div className="gmail-banner">
+      <strong>Emails are not reaching Gmail inboxes yet.</strong>
+      <p>
+        Brevo accepts the message, but Gmail often blocks mail sent as
+        @gmail.com. Connect the WattWatch Gmail account so login emails
+        send the same way they do on localhost.
+      </p>
+      {status.googleConfigured ? (
+        <a
+          className="convert-button"
+          href={status.connectUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Connect Gmail
+        </a>
+      ) : (
+        <p>
+          Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on the backend
+          Render service, then return here to connect Gmail.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function IssuedCredentials({ email, password }) {
+  return (
+    <div className="password-box">
+      <strong>Temporary password</strong>
+      <p>
+        Give this password to {email}. Copy it now — this is the login
+        even if the email never arrives.
+      </p>
+      <code>{password}</code>
     </div>
   );
 }

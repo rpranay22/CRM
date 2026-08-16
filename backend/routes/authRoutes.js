@@ -2,6 +2,7 @@ const express = require("express");
 const bcrypt = require("bcrypt");
 
 const Customer = require("../models/Customer");
+const sequelize = require("../config/database");
 
 const router = express.Router();
 
@@ -9,7 +10,10 @@ router.post(
     "/auth/customer-login",
     async (req, res) => {
         try {
-            const { email, password } = req.body;
+            const email = String(req.body.email || "")
+                .trim()
+                .toLowerCase();
+            const password = String(req.body.password || "").trim();
 
             if (!email || !password) {
                 return res.status(400).json({
@@ -18,15 +22,21 @@ router.post(
             }
 
             const customer = await Customer.findOne({
-                where: {
-                    email,
-                    status: "CUSTOMER",
-                },
+                where: sequelize.where(
+                    sequelize.fn("LOWER", sequelize.col("email")),
+                    email
+                ),
             });
 
-            if (!customer || !customer.passwordHash) {
+            if (!customer || customer.status !== "CUSTOMER") {
                 return res.status(401).json({
-                    error: "Invalid email or password",
+                    error: "No active customer account for this email. Convert the lead in the CRM first.",
+                });
+            }
+
+            if (!customer.passwordHash) {
+                return res.status(401).json({
+                    error: "This account has no password yet. Open Active Customers in the CRM and click Resend login email.",
                 });
             }
 

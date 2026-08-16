@@ -334,6 +334,50 @@ td small {
     opacity: 0.55;
 }
 
+.gmail-banner,
+.password-box {
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin: 0 0 18px;
+}
+
+.gmail-banner {
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+}
+
+.gmail-banner p {
+    margin: 8px 0 12px;
+    color: var(--muted);
+}
+
+.gmail-banner .convert-button {
+    display: inline-block;
+    text-decoration: none;
+}
+
+.password-box {
+    background: #ecfdf5;
+    border: 1px solid #99f6e4;
+}
+
+.password-box p {
+    margin: 8px 0 0;
+    color: var(--muted);
+}
+
+.password-box code {
+    display: block;
+    margin-top: 12px;
+    font-size: 22px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    background: white;
+    padding: 12px;
+    border-radius: 8px;
+    user-select: all;
+}
+
 .status {
     display: inline-block;
     padding: 5px 9px;

@@ -284,6 +284,89 @@ function createSmtpTransporter(port) {
   });
 }
 
+async function getGmailRefreshToken() {
+  if (process.env.GMAIL_REFRESH_TOKEN) {
+    return process.env.GMAIL_REFRESH_TOKEN;
+  }
+
+  try {
+    const Setting = require("../models/Setting");
+    const stored = await Setting.findByPk("gmail_refresh_token");
+    return stored?.value || null;
+  } catch (error) {
+    console.warn("Could not read Gmail token:", error.message);
+    return null;
+  }
+}
+
+function encodeGmailRaw({ from, to, toName, subject, html }) {
+  const fromHeader = from.name
+    ? `${from.name} <${from.email}>`
+    : from.email;
+  const toHeader = toName ? `${toName} <${to}>` : to;
+  const encodedSubject = `=?UTF-8?B?${Buffer.from(subject, "utf8").toString("base64")}?=`;
+
+  const mime = [
+    `From: ${fromHeader}`,
+    `To: ${toHeader}`,
+    `Subject: ${encodedSubject}`,
+    "MIME-Version: 1.0",
+    "Content-Type: text/html; charset=UTF-8",
+    "",
+    html,
+  ].join("\r\n");
+
+  return Buffer.from(mime).toString("base64url");
+}
+
+async function sendViaGmailApi({ from, to, toName, subject, html, refreshToken }) {
+  const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    }),
+  });
+
+  const tokens = await tokenResponse.json();
+
+  if (!tokens.access_token) {
+    throw new Error(
+      tokens.error_description ||
+        "Gmail login expired. Open Connect Gmail in the CRM and authorize again."
+    );
+  }
+
+  const sendResponse = await fetch(
+    "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${tokens.access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        raw: encodeGmailRaw({ from, to, toName, subject, html }),
+      }),
+    }
+  );
+
+  const result = await sendResponse.json();
+
+  if (!sendResponse.ok) {
+    throw new Error(
+      result.error?.message || "Gmail API could not send the email"
+    );
+  }
+
+  return result;
+}
+
 async function sendViaSmtp({ from, to, subject, text, html }) {
   const configuredPort = smtpPort();
   const host = smtpHost();
@@ -322,6 +405,24 @@ async function sendMail({ to, toName, subject, text, html }) {
     throw new Error("MAIL_FROM is not configured");
   }
 
+  const gmailRefreshToken = await getGmailRefreshToken();
+
+  if (
+    gmailRefreshToken &&
+    process.env.GOOGLE_CLIENT_ID &&
+    process.env.GOOGLE_CLIENT_SECRET
+  ) {
+    const result = await sendViaGmailApi({
+      from,
+      to,
+      toName,
+      subject,
+      html,
+      refreshToken: gmailRefreshToken,
+    });
+    return { provider: "gmail", messageId: result.id };
+  }
+
   if (process.env.BREVO_API_KEY) {
     const result = await sendViaBrevo({
       from,
@@ -349,6 +450,17 @@ async function sendMail({ to, toName, subject, text, html }) {
 }
 
 async function verifyEmailConnection() {
+  const gmailRefreshToken = await getGmailRefreshToken();
+
+  if (
+    gmailRefreshToken &&
+    process.env.GOOGLE_CLIENT_ID &&
+    process.env.GOOGLE_CLIENT_SECRET
+  ) {
+    console.log("Email provider: Gmail HTTPS API");
+    return;
+  }
+
   if (process.env.BREVO_API_KEY) {
     console.log("Email provider: Brevo HTTPS API");
     return;
