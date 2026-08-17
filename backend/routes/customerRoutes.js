@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const { Op } = require("sequelize");
 
 const Customer = require("../models/Customer");
+const sequelize = require("../config/database");
 const { hashPassword } = require("../utils/password");
 const {
     sendTemporaryPasswordEmail,
@@ -163,6 +164,46 @@ router.get("/customers", async (req, res) => {
 });
 
 /*
+  Fetch one customer by email.
+  GET /api/customers/lookup?email=user@email.com
+*/
+router.get("/customers/lookup", async (req, res) => {
+    try {
+        const email = String(req.query.email || "")
+            .trim()
+            .toLowerCase();
+
+        if (!email) {
+            return res.status(400).json({
+                error: "email query parameter is required",
+            });
+        }
+
+        const customer = await Customer.findOne({
+            where: sequelize.where(
+                sequelize.fn("LOWER", sequelize.col("email")),
+                email
+            )
+
+        });
+
+        if (!customer) {
+            return res.status(404).json({
+                error: "Customer not found",
+            });
+        }
+
+        return res.json({
+            data: customer.passwordHash,
+        });
+    } catch (error) {
+        return res.status(500).json({
+            error: error.message,
+        });
+    }
+});
+
+/*
   Convert lead to customer.
   POST /api/customers/:id/convert
 */
@@ -232,7 +273,7 @@ router.post(
                 error: timedOut
                     ? "Email send timed out. Render free hosting blocks SMTP. Add BREVO_API_KEY, SENDGRID_API_KEY or RESEND_API_KEY in Render environment variables."
                     : error.message ||
-                      "Unable to convert customer",
+                    "Unable to convert customer",
             });
         }
     }
