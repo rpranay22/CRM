@@ -204,6 +204,58 @@ router.get("/customers/lookup", async (req, res) => {
 });
 
 /*
+  Update password hash (WattWatch app change-password → keep CRM login in sync).
+  PUT /api/customers/password
+  Body: { email, passwordHash } — bcrypt hash from WattWatch API
+*/
+router.put("/customers/password", async (req, res) => {
+    try {
+        const email = String(req.body.email || "")
+            .trim()
+            .toLowerCase();
+        const passwordHash = req.body.passwordHash;
+
+        if (!email || !passwordHash) {
+            return res.status(400).json({
+                error: "email and passwordHash are required",
+            });
+        }
+
+        const syncSecret = process.env.CRM_SYNC_SECRET || process.env.WATTWATCH_SYNC_SECRET;
+        if (syncSecret) {
+            const provided = req.headers["x-sync-secret"];
+            if (provided !== syncSecret) {
+                return res.status(403).json({ error: "Forbidden" });
+            }
+        }
+
+        const customer = await Customer.findOne({
+            where: sequelize.where(
+                sequelize.fn("LOWER", sequelize.col("email")),
+                email
+            ),
+        });
+
+        if (!customer) {
+            return res.status(404).json({
+                error: "Customer not found",
+            });
+        }
+
+        await customer.update({
+            passwordHash,
+            mustChangePassword: false,
+        });
+
+        return res.json({ ok: true });
+    } catch (error) {
+        return res.status(500).json({
+            error: error.message,
+        });
+    }
+});
+
+/*
   Convert lead to customer.
   POST /api/customers/:id/convert
 */
