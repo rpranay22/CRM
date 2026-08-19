@@ -49,7 +49,7 @@ const Ticket = sequelize.define(
         },
     },
     {
-        tableName: "tickets",
+        tableName: "crm_tickets",
         freezeTableName: true,
         timestamps: true,
     }
