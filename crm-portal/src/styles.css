@@ -87,6 +87,10 @@ select {
     margin-bottom: 8px;
     border-radius: 10px;
     cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
 }
 
 .nav-button:hover,
@@ -489,6 +493,102 @@ td small {
     border: 1px solid var(--border);
     border-radius: 9px;
     background: white;
+}
+
+.nav-badge {
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: #ef4444;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+}
+
+.crm-unread-banner {
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    border-radius: 10px;
+    background: #fef3c7;
+    border: 1px solid #f59e0b;
+    color: #92400e;
+}
+
+.ticket-card-badges {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ticket-card-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.ticket-card-actions select {
+    flex: 1;
+}
+
+.ticket-chat-box {
+    margin-top: 14px;
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+}
+
+.ticket-chat-messages {
+    max-height: 260px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.crm-chat-bubble {
+    padding: 10px 12px;
+    border-radius: 12px;
+    max-width: 92%;
+}
+
+.crm-chat-bubble small {
+    display: block;
+    margin-bottom: 4px;
+    opacity: 0.75;
+}
+
+.crm-chat-bubble p {
+    margin: 0;
+    white-space: pre-wrap;
+}
+
+.crm-chat-bubble.customer {
+    align-self: flex-start;
+    background: #f3f4f6;
+}
+
+.crm-chat-bubble.staff {
+    align-self: flex-end;
+    background: #dbeafe;
+}
+
+.ticket-chat-compose {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+}
+
+.ticket-chat-compose textarea {
+    flex: 1;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    font: inherit;
+    resize: vertical;
 }
 
 .message {

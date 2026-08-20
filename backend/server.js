@@ -7,6 +7,7 @@ const sequelize = require("./config/database");
 
 require("./models/Customer");
 require("./models/Ticket");
+require("./models/TicketMessage");
 require("./models/Setting");
 
 const customerRoutes = require(

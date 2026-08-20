@@ -8,6 +8,18 @@ import "./styles.css";
 
 function App() {
   const [page, setPage] = useState("dashboard");
+  const [ticketUnread, setTicketUnread] = useState(0);
+
+  useEffect(() => {
+    function loadUnread() {
+      api("/tickets/unread")
+        .then((r) => setTicketUnread(r.total || 0))
+        .catch(() => {});
+    }
+    loadUnread();
+    const id = window.setInterval(loadUnread, 20000);
+    return () => window.clearInterval(id);
+  }, [page]);
 
   return (
     <div className="crm-layout">
@@ -45,6 +57,7 @@ function App() {
         <NavButton
           active={page === "tickets"}
           onClick={() => setPage("tickets")}
+          badge={ticketUnread > 0 ? ticketUnread : null}
         >
           Tickets
         </NavButton>
@@ -93,6 +106,7 @@ function NavButton({
   active,
   onClick,
   children,
+  badge,
 }) {
   return (
     <button
@@ -103,7 +117,8 @@ function NavButton({
       }
       onClick={onClick}
     >
-      {children}
+      <span>{children}</span>
+      {badge ? <span className="nav-badge">{badge}</span> : null}
     </button>
   );
 }
@@ -611,15 +626,22 @@ function Customers() {
 }
 
 function Tickets() {
-  const [tickets, setTickets] =
-    useState([]);
-
+  const [tickets, setTickets] = useState([]);
   const [error, setError] = useState("");
+  const [openChatId, setOpenChatId] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatDraft, setChatDraft] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const [unreadTotal, setUnreadTotal] = useState(0);
 
   async function loadTickets() {
     try {
-      const result = await api("/tickets");
+      const [result, unread] = await Promise.all([
+        api("/tickets"),
+        api("/tickets/unread"),
+      ]);
       setTickets(result.data);
+      setUnreadTotal(unread.total || 0);
     } catch (err) {
       setError(err.message);
     }
@@ -627,23 +649,51 @@ function Tickets() {
 
   useEffect(() => {
     loadTickets();
+    const id = window.setInterval(loadTickets, 20000);
+    return () => window.clearInterval(id);
   }, []);
 
-  async function changeTicketStatus(
-    ticketId,
-    status
-  ) {
+  async function changeTicketStatus(ticketId, status) {
     try {
       await api(`/tickets/${ticketId}`, {
         method: "PATCH",
-        body: JSON.stringify({
-          status,
-        }),
+        body: JSON.stringify({ status }),
       });
-
       await loadTickets();
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  async function openChat(ticketId) {
+    setOpenChatId(ticketId);
+    setChatDraft("");
+    try {
+      const result = await api(`/tickets/${ticketId}/messages`);
+      setChatMessages(result.messages || []);
+      await loadTickets();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function sendChatMessage() {
+    const text = chatDraft.trim();
+    if (!text || !openChatId || chatBusy) return;
+    setChatBusy(true);
+    try {
+      await api(`/tickets/${openChatId}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ body: text, senderName: "CRM Agent" }),
+      });
+      setChatDraft("");
+      const result = await api(`/tickets/${openChatId}/messages`);
+      setChatMessages(result.messages || []);
+      await loadTickets();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setChatBusy(false);
     }
   }
 
@@ -651,31 +701,33 @@ function Tickets() {
     <section className="page">
       <PageHeading
         title="Support Tickets"
-        description="Track and resolve customer support requests."
+        description="Track, chat with customers, and resolve support requests."
       />
 
       {error && (
-        <Message type="error">
-          {error}
-        </Message>
+        <Message type="error">{error}</Message>
+      )}
+
+      {unreadTotal > 0 && (
+        <div className="crm-unread-banner">
+          <strong>{unreadTotal} unread customer message{unreadTotal === 1 ? "" : "s"}</strong>
+        </div>
       )}
 
       <div className="ticket-grid">
         {tickets.map((ticket) => (
-          <article
-            className="ticket-card"
-            key={ticket.id}
-          >
+          <article className="ticket-card" key={ticket.id}>
             <div className="card-top">
               <div>
-                <small>
-                  Ticket #{ticket.id}
-                </small>
-
+                <small>Ticket #{ticket.id}</small>
                 <h3>{ticket.subject}</h3>
               </div>
-
-              <Status status={ticket.status} />
+              <div className="ticket-card-badges">
+                {ticket.unread_count > 0 && (
+                  <span className="nav-badge">{ticket.unread_count}</span>
+                )}
+                <Status status={ticket.status} />
+              </div>
             </div>
 
             <p>{ticket.description}</p>
@@ -686,39 +738,75 @@ function Tickets() {
                   ? `${ticket.customer.firstName} ${ticket.customer.lastName}`
                   : "Unknown customer"}
               </span>
-
-              <span>
-                Priority: {ticket.priority}
-              </span>
+              <span>Priority: {ticket.priority}</span>
             </div>
 
-            <select
-              value={ticket.status}
-              onChange={(event) =>
-                changeTicketStatus(
-                  ticket.id,
-                  event.target.value
-                )
-              }
-            >
-              <option value="OPEN">
-                Open
-              </option>
+            <div className="ticket-card-actions">
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => openChat(ticket.id)}
+              >
+                Chat
+              </button>
 
-              <option value="IN_PROGRESS">
-                In Progress
-              </option>
+              <select
+                value={ticket.status}
+                onChange={(event) =>
+                  changeTicketStatus(ticket.id, event.target.value)
+                }
+              >
+                <option value="OPEN">Open</option>
+                <option value="IN_PROGRESS">In Progress</option>
+                <option value="RESOLVED">Resolved</option>
+              </select>
+            </div>
 
-              <option value="RESOLVED">
-                Resolved
-              </option>
-            </select>
+            {openChatId === ticket.id && (
+              <div className="ticket-chat-box">
+                <div className="ticket-chat-messages">
+                  {chatMessages.map((m) => (
+                    <div
+                      key={m.id}
+                      className={
+                        m.sender_role === "staff"
+                          ? "crm-chat-bubble staff"
+                          : "crm-chat-bubble customer"
+                      }
+                    >
+                      <small>
+                        {m.sender_name || m.sender_role} ·{" "}
+                        {new Date(m.created_at).toLocaleString()}
+                      </small>
+                      <p>{m.body}</p>
+                    </div>
+                  ))}
+                  {!chatMessages.length && (
+                    <p className="muted">No messages yet.</p>
+                  )}
+                </div>
+                <div className="ticket-chat-compose">
+                  <textarea
+                    rows={2}
+                    placeholder="Reply to customer…"
+                    value={chatDraft}
+                    onChange={(e) => setChatDraft(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="primary-button"
+                    disabled={chatBusy || !chatDraft.trim()}
+                    onClick={sendChatMessage}
+                  >
+                    {chatBusy ? "Sending…" : "Send"}
+                  </button>
+                </div>
+              </div>
+            )}
           </article>
         ))}
 
-        {!tickets.length && (
-          <p>No support tickets found.</p>
-        )}
+        {!tickets.length && <p>No support tickets found.</p>}
       </div>
     </section>
   );
