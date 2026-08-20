@@ -5,6 +5,7 @@ const { Op } = require("sequelize");
 const Customer = require("../models/Customer");
 const sequelize = require("../config/database");
 const { hashPassword } = require("../utils/password");
+const { syncAppUserPassword } = require("../utils/passwordSync");
 const {
     sendTemporaryPasswordEmail,
 } = require("../services/emailService");
@@ -18,20 +19,38 @@ function createTemporaryPassword() {
         .slice(0, 12);
 }
 
-async function emailTemporaryPassword(customer) {
+/** Save password to DB first, then try email — login works even if mail fails. */
+async function issueNewLoginCredentials(customer) {
     const temporaryPassword = createTemporaryPassword();
     const passwordHash = await hashPassword(temporaryPassword);
 
-    const emailResult = await sendTemporaryPasswordEmail({
-        customer,
-        temporaryPassword,
-    });
-
-    return {
-        temporaryPassword,
+    await customer.update({
         passwordHash,
-        emailProvider: emailResult.provider,
-    };
+        mustChangePassword: true,
+        loginEmailSentAt: new Date(),
+    });
+    await syncAppUserPassword(customer.email, passwordHash);
+    await customer.reload();
+
+    let emailProvider = null;
+    try {
+        const emailResult = await sendTemporaryPasswordEmail({
+            customer,
+            temporaryPassword,
+        });
+        emailProvider = emailResult.provider;
+    } catch (error) {
+        console.warn(
+            `Login email failed for ${customer.email}, password still saved:`,
+            error.message
+        );
+    }
+
+    return { temporaryPassword, passwordHash, emailProvider };
+}
+
+async function emailTemporaryPassword(customer) {
+    return issueNewLoginCredentials(customer);
 }
 
 function removePassword(customer) {
@@ -246,6 +265,7 @@ router.put("/customers/password", async (req, res) => {
             passwordHash,
             mustChangePassword: false,
         });
+        await syncAppUserPassword(email, passwordHash);
 
         return res.json({ ok: true });
     } catch (error) {
@@ -286,20 +306,18 @@ router.post(
             console.log(
                 `Sending temporary password email to ${customer.email}`
             );
-            const { temporaryPassword, passwordHash, emailProvider } =
-                await emailTemporaryPassword(customer);
+            const { temporaryPassword, emailProvider } =
+                await issueNewLoginCredentials(customer);
 
             await customer.update({
                 status: "CUSTOMER",
-                passwordHash,
-                mustChangePassword: true,
                 convertedAt: new Date(),
-                loginEmailSentAt: new Date(),
                 notes:
                     req.body.notes !== undefined
                         ? req.body.notes
                         : customer.notes,
             });
+            await customer.reload();
 
             return res.json({
                 message:
@@ -351,14 +369,8 @@ router.post(
                 });
             }
 
-            const { temporaryPassword, passwordHash, emailProvider } =
-                await emailTemporaryPassword(customer);
-
-            await customer.update({
-                passwordHash,
-                mustChangePassword: true,
-                loginEmailSentAt: new Date(),
-            });
+            const { temporaryPassword, emailProvider } =
+                await issueNewLoginCredentials(customer);
 
             return res.json({
                 message: "Login email sent",
