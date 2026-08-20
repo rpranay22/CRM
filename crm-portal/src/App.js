@@ -344,8 +344,6 @@ function Leads() {
         placeholder="Search name, email, Eircode or MPRN"
       />
 
-      <GmailSetupBanner />
-
       {issuedPassword && (
         <IssuedCredentials
           email={issuedPassword.email}
@@ -534,8 +532,6 @@ function Customers() {
           setSearch(event.target.value)
         }
       />
-
-      <GmailSetupBanner />
 
       {issuedPassword && (
         <IssuedCredentials
@@ -820,46 +816,6 @@ function PageHeading({
     <div className="page-heading">
       <h2>{title}</h2>
       <p>{description}</p>
-    </div>
-  );
-}
-
-function GmailSetupBanner() {
-  const [status, setStatus] = useState(null);
-
-  useEffect(() => {
-    api("/gmail/status")
-      .then(setStatus)
-      .catch(() => {});
-  }, []);
-
-  if (!status || status.connected) {
-    return null;
-  }
-
-  return (
-    <div className="gmail-banner">
-      <strong>Emails are not reaching Gmail inboxes yet.</strong>
-      <p>
-        Brevo accepts the message, but Gmail often blocks mail sent as
-        @gmail.com. Connect the WattWatch Gmail account so login emails
-        send the same way they do on localhost.
-      </p>
-      {status.googleConfigured ? (
-        <a
-          className="convert-button"
-          href={status.connectUrl}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Connect Gmail
-        </a>
-      ) : (
-        <p>
-          Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on the backend
-          Render service, then return here to connect Gmail.
-        </p>
-      )}
     </div>
   );
 }
