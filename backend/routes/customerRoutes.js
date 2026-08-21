@@ -391,9 +391,6 @@ router.post(
     }
 );
 
-    }
-});
-
 /*
   Delete customer account (WattWatch app delete → remove from CRM).
   DELETE /api/customers/account
