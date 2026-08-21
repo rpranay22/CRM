@@ -6,6 +6,7 @@ const Customer = require("../models/Customer");
 const sequelize = require("../config/database");
 const { hashPassword } = require("../utils/password");
 const { syncAppUserPassword } = require("../utils/passwordSync");
+const { deleteCustomerAccount } = require("../utils/accountDelete");
 const {
     sendTemporaryPasswordEmail,
 } = require("../services/emailService");
@@ -389,6 +390,37 @@ router.post(
         }
     }
 );
+
+    }
+});
+
+/*
+  Delete customer account (WattWatch app delete → remove from CRM).
+  DELETE /api/customers/account
+  Body: { email }
+*/
+router.delete("/customers/account", async (req, res) => {
+    try {
+        const email = String(req.body.email || "").trim().toLowerCase();
+        if (!email) {
+            return res.status(400).json({ error: "email is required" });
+        }
+
+        const syncSecret = process.env.CRM_SYNC_SECRET || process.env.WATTWATCH_SYNC_SECRET;
+        if (syncSecret) {
+            const provided = req.headers["x-sync-secret"];
+            if (provided !== syncSecret) {
+                return res.status(403).json({ error: "Forbidden" });
+            }
+        }
+
+        await deleteCustomerAccount(email);
+        return res.json({ ok: true });
+    } catch (error) {
+        console.error("Delete customer account error:", error);
+        return res.status(500).json({ error: error.message || "Unable to delete account" });
+    }
+});
 
 router.patch("/customers/:id", async (req, res) => {
     try {
